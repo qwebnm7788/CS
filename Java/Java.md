@@ -1,4 +1,4 @@
-#Interface
+# Interface
 
 interface는 class가 무엇을 해야 하는지를 명시한다. (그렇지만 how는 알려주지 않는다) -> 즉 class의 blueprint라고 할 수 있다.
 
@@ -24,7 +24,7 @@ interface <interface_name>{
 2. 자바가 multiple inheritance를 지원하지 않지만 여러개의 interface를 구현하는 것은 가능함
 
 
-#Abstract Class
+# Abstract Class
 c++에선 최소 하나 이상의 virtual function이 존재하면 해당 class가 abstract가 되었지만
 자바에선 명시적으로 abstract keyword를 지정해 주어야 한다.
 
@@ -40,7 +40,7 @@ abstract class Shape {
 
 abstract class의 instance는 생성할 수 없음 하지만 해당 타입의 reference는 생성할 수 있다.
 
-##Abstrct class vs Interface
+## Abstrct class vs Interface
 1. 메서드 타입 interface는 오직 abstract method만, abstract class는 non-abstract method도 가능
 2. varialbe -> abstract class는 non-final 변수도 가능하다
 
@@ -50,7 +50,7 @@ abstract class의 instance는 생성할 수 없음 하지만 해당 타입의 re
 무조건 구현되어야 하는 부분이 있다면 interface를 사용
 
 
-#Comparator interface
+# Comparator interface
 user-defined object의 order를 정의(?) 하고 싶을 때 사용한다.
 매번 새로운 클래스에 대해 새로운 sort 함수를 정의하는 대신 인터페이스만 구현하도록 하여
 기존에 있던 standard sort function을 사용할 수 있다는 장점이 있다.
@@ -66,10 +66,10 @@ Collections class의 sort 함수는 정렬시 매번 두개의 원소를 잡아 
 
 
 
-#Collections
+# Collections
 ![](java-collection.jpg)
 
-##ArrayList
+## ArrayList
 List interface를 구현한 구현체이며 c++의 vector class와 비슷하다.
 
 기존의 Array와의 차이점은 dynamic size를 제공한다는 점이다.
@@ -110,6 +110,3 @@ class Test
     }
 }
 ```
-
-
-
