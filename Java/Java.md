@@ -69,6 +69,17 @@ Collections class의 sort 함수는 정렬시 매번 두개의 원소를 잡아 
 # Collections
 ![](java-collection.jpg)
 
+
+# List Interface
+
+ordered colletions of object이며 중복된 원소를 저장할 수 있다.
+ArrayList, LinkedList, Vector, Stack 클래스가 List의 구현체이다.
+
+제공하는 연산
+1. Positional Access -> numeric index로 접근이 가능하다
+2. Search -> 특정 원소를 찾아 해당 위치를 index로 반환해준다.
+3. Iteration -> iterator를 이용하여 순회할 수 있다.
+4. Range-view -> 리스트의 일부분만을 리스트로써 다룰 수 있게 해준다.
 ## ArrayList
 List interface를 구현한 구현체이며 c++의 vector class와 비슷하다.
 
@@ -110,3 +121,40 @@ class Test
     }
 }
 ```
+
+ArrayList와 유사한 것으로는 Vector class가 있다. 이는 legacy 클래스라고 볼 수 있지만 여전히 사용된다. 마찬가지로 dynamic array로 구현되어있지만 synchronised되어 있다.
+
+
+### Vector vs ArrayList
+둘다 dynamic array를 이용하여 List interface를 구현한 구현체 클래스이다.
+가장 큰 차이점은 다음과 같다.
+1. Synchronization 
+	- Vector는 synchronized되어 한 순간에 오직 단 하나의 스레드만이 접근이 가능하며, 반대로 ArrayList는 그렇지 않아 여러개의 스레드가 동시에 동일한 ArrayList를 이용하여 작업을 진행할 수 있다. 그러므로 만약 여러 스레드가 ArrayList를 사용할 일이 생긴다면 lock 등을 이용하여 그 부분을 적절히 처리해줄 필요가 있다.
+2. Performance
+	- ArrayList가 더 빠르다. 왜냐면 vector와 다르게 thread-safe가 아니기 때문에
+
+그 밖에도 array가 resize되는 방식이나 iterate하는 방식이 조금씩 다르다.
+
+
+# Set
+unordered collections of object이며 중복된 원소를 저장할 수 없다.
+HashSet, LinkedSet, TreeSet이 Set interface를 구현한다.
+집합을 표현할 때 유용하게 사용할 수 있다.
+
+## Hashset
+hashtable을 이용하여 Set interface를 구현한다. insert한 순서대로 들어가는 것이 아니며,
+object의 hash code값을 이용하여 들어가게 된다. 	
+
+hashtable을 사용하기 때문에 load factor가 성능에 영향을 준다. -> load factor가 75% 이상이 되면 size를 두 배로 늘려 줄여준다.
+
+HashSet은 내부적으로 HashMap을 이용하여 원소를 저장한다. Map은 key ,value pair로 저장하는데
+내부적으로 HashSet은 항상 동일한 value값을 이용하여 모든 key값을 저장한다고 한다.
+
+## LinkedHashSet
+hashset의 ordered version이라고 할 수 있다. hashset을 iterate하게 되면 그 순서는 예측할 수
+없는데 LinkedHashSet은 doubly-linkedlist로 구현하여 삽입된 순서대로 원소를 순회할 수 있게 해준다.
+
+insertion order를 유지하기 때문에 기존의 hashset, hashmap보다 더 많은 cpu cycle과 메모리를 사용한다는 단점이 있다.
+
+## TreeSet
+순서를 유지하진 않지만 key값에 따라 정렬된 상태로 원소를 저장한다. 그렇지만 동일한 원소의 삽입이 불가능하다. 내부적으로는 Red-black tree와 같은 self-balancing binary search tree로 구현된다. 그래서 삽입, 삭제, 검색을 O(logN)에 해결할 수 있다.
