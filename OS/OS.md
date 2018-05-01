@@ -254,4 +254,412 @@ bound 레지스터는 security를 위해 존재한다. -> 메모리 주소 참�
 base ~ bound 사이의 대부분의 영역이 사용되지 않은 채 남게 된다.
 이러한 낭비를 internal fragmentation이라고 한다. -> allocated된 영역의 내부가 낭비되는 문제
 
+# 16
+실제 메모리는 위에서 살펴본것처럼 16kb짜리가 아니라 훨씬 크다. 그래서 internal fragmentation은 문제가 된다
+![](16.1.jpg)
+
+좀 더 나은방법? -> 한쌍의 base, bound를 두지 말고 address space의 logical segment당 한 쌍의 base, bound를 두어 segment별로 관리해보자.
+
+위 그림과 같은 virtual address space를 가진 프로그램이 있을때 code, stack, heap 영역을 각각 하나의 segment로 보고 그에 대한 base, bound register를 유지하자.
+이러면 physical memory에 mapping 시킬때 각 segment를 독립적으로 위치시킬 수 있게 된다.
+
+![](16.2.jpg)
+이렇게 되면 사용하고 있는 공간만을 차지하게 된다. 이렇게 구현되기 위해서는 기존에 한쌍만 존재했던 base, bound register를 segment의 갯수만큼의 쌍으로 관리해야 한다.
+
+잘못된 주소 접근 ? -> segmentation fault
+
+virtural address는 접근전에 physical address로 translation되어야 하는데 어떻게 될까?
+해당 주소가 특정 segment에 있는지 알아낸 다음 그곳으로 가서 그것의 base에 offset을 더하면 됨
+
+그렇다면 reference가 발생할때 그게 어느 segment에 속하는지 offset은 몇인지 어떻게 알까?
+두가지 접근법이 있음
+1. implicit approach -> 해당 reference가 어디서 발생했는지를 보고 어떤 segment일지 결정하는거야 PC에서 이루어졌다면 code segment겠지? 등등
+2. explicit approach -> 지금껏 해온것과 비슷하게 진행, 주소의 일부분을 어떤 segment인지를 표시하는 부분과 offset 부분으로 나누어서 봄
+예를 들면 위의 그림은 16kb짜리 address space를 쓰므로 2^14 -> 14bit address를 쓴다.
+segment는 3개가 있으니깐 3을 표현하려면 최소 2bit을 써야함 따라서 상위 2bit으로 segment를 구분하는데 쓰고 나머지를 offset으로 사용함
+그래서 매번 reference 발생시 상위 바이트로 해당되는 segment의 base, bound register를 찾고
+그 값으로 physical address 계산을 수행하게 된다.
+
+
+근데 자세히 보면 우리는 더하기만 했는데 스택은 거꾸로 커지니깐 주소를 빼줘야함
+해결하려면 하드웨어의 힘을 좀 더 빌려서 어느 방향으로 증가하는지에 대한 정보도 필요해 (1bit이면 될듯 positive인지 negative인지)
+
+예를 들어보면 위 두 그림에서 만약 virtual address 15KB에 접근한다고 해보자.
+이러면 virtual 상에선 16KB기준으로 -1KB만큼 간거임 이걸 어떻게 계산할까? 제대로 한다면 physical에서 stack이 28KB에서 시작한다면 27KB로 mapping 되어야 함
+
+15KB = 11 1100 0000 0000 (0x3C00)임 첫 2bit 11로 segment를 정함
+1100 0000 0000 이 offset임 -> 3KB임
+
+이땐 해당 segment의 최대 크기가 필요한데 4KB이니깐 -> ??
+3KB - 4KB = -1KB가 됨 이것을 base 인 28KB에 더하면 27KB로 잘 mapping된다.
+
+즉 offset - maxsize + base로 계산함
+
+
+하드웨어의 힘을 또 빌려서 이번엔 메모리를 절약해보자.
+
+생각해보면 여러 친구들이 동일한 코드를 공유할수도 있음, 즉 여러 address space가 동일한 memory segment를 참조할 수 있음 이 때 이러한 부분을 공유하는게 어떨까? 대표적으로 code segment
+
+이걸위해선 각 segment에 대해 protection bit이 필요해 그래서 해당 segment가 readable 한지
+writable, executable한지를 표시해주자. 만약 해당 segment가 read permission이 있다면 여러 address space에서 그 메모리 영역을 공유하여 사용할 수 있어 -> 물론 각 프로그램들은 자신의 virtual address만 보기때문에 다 자기껀줄 알겠지
+
+그렇지만 이제 address translation할 때 bound만 보는게 아니고 protection bit도 봐서
+해당 프로그램이 참조하는 segment에 대한 해당 permission이 있는지도 확인해 줘야해
+
+
+3개의 segment뿐 아닌 더 여러개의 segment로 쪼갤수도 있음 -> fine-grained vs coarse-grained segmentation
+
+물론 segmentation이 기존의 문제였던 unused되는 공간을 없앤것은 맞음
+근데 문제가 있음
+1. context switch때 어떻게 할꺼임? -> segment마다 존재하는 레지스터들이 모두 다 저장되고 복원되야 된다.
+2. 이제 segment별로 크기가 다 달라서 기존과는 다르게 physical memory에 free space를 찾는 방법이 달라져야 함. 또 이렇게 크기가 다르면 physical memory에 작은 구멍들이 많이 생김 -> 그 만큼 작은 segment가 오지 않는이상 이부분은 버려지게 됨 -> 이런걸 external fragmentation이라 함
+
+이것에 대한 하나의 솔루션은 compaction임
+즉 잠시 실행되는거 다 멈추고 메모리를 allocated된 부분에 대해서 한쪽으로 다 밀어버리는거야 (그에 맞게 register도 물론 수정하고) -> 근데 이건 너무 느려 (메모리 작업이잖어) 비효율!
+
+좀 더 간단한 해결책은 free-list management 알고리즘을 잘 떠올려보는거야
+best-fit, worst-fit, first-fit, buddy-algorithm 등등 많음
+
+물론 이런 알고리즘이 external fragmentation을 줄여줄 순 있겠지만 어찌됬던 항상 존재할수밖에 없음 -> 최소화하려고 노력하자.
+
+또 문제는 여전히 sparse-address space를 잘 해결하지 못할 수 있음
+예를 들면 되게 드문드문 사용되는 heap의 경우 segment의 전체 크기는 매우 크지만
+사용안되는 부분은 많을꺼야 .. ?
+
+# 17
+free-space management에 대해 알아보자. 만약 다루어야 할 space가 fixed size라면 매우 쉬울꺼야 그냥 특정 크기의 덩어리의 리스트를 잘 가지고 있다가 필요하면 하나씩 주면 되니깐
+
+근데 segmentation에서 봤듯이 variable size 덩어리를 줘야하면 좀 어려워져 (malloc으로 사용자가 요청하는 경우 등등도 마찬가지) -> 이 땐 free space가 들쑥날쑥 차지하게 되어 external fragmentation이 생긴다.
+
+![](17.1.jpg)
+
+
+위와 같은 free space를 list의 형태로 관리한다고 생각해보자.
+
+![](17.2.jpg)
+
+10byte보다 큰 메모리 할당은 실패할것이고 10byte를 요구하면 저 덩어리 하나를 주면됨
+그보다 작은것은? -> splitting으로 잘라서 주고 남은것은 그대로 가지면 된다.
+
+예를 들어 1byte를 요구하면 다음과 같아진다
+![](17.3.jpg)
+
+만약에 1byte를 요구하는 것이 아닌 10byte를 free해서 돌려줬다고 생각해보자.
+단순히 반환만 한다면 다음과 같아진다
+![](17.4.jpg)
+
+근데 이렇게 되면 20byte짜리는 절대 할당해줄 수 없음
+그래서 이 문제를 해결하기 위해 매번 free마다 각 free-space를 살펴보다 인접한 메모리 영역에 있는 것들은 하나로 합쳐주기로 함 -> coalescing 이라고 함
+
+![](17.5.jpg)
+
+free함수로 할당된 메모리를 반환할때는 크기정보를 알려주지 않음 -> 자체적으로 알아내야함
+그래서 메모리를 할당해줄때 헤더를 추가로 할당해서 여러 추가 정보를 넣어두게 된다.
+
+![](17.6.jpg)
+이를 통해 사용자가 N bytes를 요구한다고 해서 라이브러리가 딱 N바이트를 찾는 것이 아니라
+N + header size만큼을 찾는 다고 생각할 수 있다.
+
+실제로 어떻게 동작하는지는 책의 예제를 확인!
+
+allocator가 빠르고 fragmenation을 최소화 하려면 어떤 전략을 써야할까?
+여기에 정답은 없음
+
+## Best fit
+free list를 한번 쭉 보고 요청된 크기보다 큰 것 중 가장 작은 것을 할당해주는 방식
+-> wasted space를 최소화 할 수 있음, 그치만 전체를 exhaustive search해야 한다는 단점, 또 자잘한 구멍들이 많이 생긴다는 단점
+
+## Worst fit
+best fit의 반대로 요청된 크기보다 큰 것중 가장 큰것을 찾고 그것을 잘라서 주는 방식
+여전히 리스트를 전부 봐야한다는 단점이 있음, 최대한 덩어리의 크기를 크게 남기려고 노력함 (가장 큰 것을 찾아서 잘라내면 남게되는 것도 best fit에 비해 크겠지)
+
+## Segregated List
+다른 방법중에는 segregated list란 것이 있는데 free-space를 유지하는 리스트를 단 하나만 가지는 게 아니라 자주 사용되는 크기로 구성된 (fixed size) 리스트와 general 크기의 리스트로 나눠서 유지함. -> 이러면 자주 사용되는 것을 사용시 좀 더 효율적이게 됨.
+
+## Buddy Allocation
+2의 지수승으로 나누어 관리 -> coalescing이 간단해짐
+
+
+# 18
+## Paging
+variable-size로 나누면  fragmentation이 심함
+이제 fixed-size로 나눠보자. 이렇게 나눈 fixed-size unit을 page라고 부른다.
+physical memory는 이제 page frame이라 불리는 fixed-size slot의 배열로 볼 수 있게 된다.
+
+paging을 사용하면 address space를 굉장히 flexible하게 사용할 수 있음 -> 예를 들면 segmentation에선 heap, stack처럼 늘어나는 방향을 고려해줬어야 하는데 이제 항상 크기가 고정이기 때문에 방향에 대해선 고민할 필요가 없다. -> 그냥 원하는 곳에 새로운 page를 주면 되니깐
+그리고 free-list를 다루는 것이 매우 simple해진다. -> 그냥 page하나 준다.
+
+예를 들어보자
+64bit address space를 가진 프로세스에 대해 128 bit의 physical memory가 존재한다고 하자. 또한 page의 크기는 16bit이라고 하자.
+
+![](18.1.jpg)  
+(virtual address space)
+
+![](18.2.jpg)
+(physical address space)
+
+이렇게 되면 연속된 page라도 physical memory에선 연속되지 않은 여러군데의 page frame에 들어갈 수 있게 된다. -> 이러한 mapping정보를 담을 page table이 필요함
+
+page table은 per-process로 저장됨 -> 매 프로세스별로 다른 mapping정보를 갖는다.
+
+virtual address 해석법 -> 상위/하위 비트를 나누어 virtual page number(VPN)과 offset으로 구분함
+VPN을 page table의 index로 사용해서 physical frame number(PFN, PPN)을 얻은 뒤
+그것을 offset과 하나로 합쳐서 실제 physical address를 얻게 된다.
+
+![](18.4.jpg)
+
+page table은 어디 저장될까?
+page table은 엄청 커질수 있음, 예를들어 32bit 주소공간에 4KB 크기의 page를 사용한다면
+2^32 / 2^12 = 2^20 개의 page가 존재하게 된다. (4KB=2^12Byte) 그러면 VPN은 20bit을 차지하게 되고 page table에느 2^20가지의 translation이 존재하게 된다. table의 각 entry에 들어가는 값들이 4byte라고 한다면 (page table entry(PTE)당 4byte) -> 4 * 2^20 byte = 4MB가 된다.
+
+크기가 커질수록 이 값은 커지게 된다. 그래서 page talbe은 MMU와 같은 하드웨어에 올라가 있지 않고 physical memory에 존재하게 된다.
+
+page table entry에는 어떤 내용들이 있을까?
+valid bit -> 특정 translation이 valid한 지 여부를 알려줌 (사용되지 않는 부분에 대한 참조는 invalid로 표시해두어 trap으로 처리하게 만듬)
+
+protection bit -> 특정 page가 readable, writable, execuable한지 여부
+present bit -> 해당 page가 physical memory에 있는지 아니면 disk에 있는지 (swap out 되었는지)
+dirty bit -> 메모리에 올라온뒤로 수정되었는지
+reference bit (access bit) -> page가 접근되었는지 -> 나중에 page replacement에 사용됨
+
+기타 등등
+
+하드웨어가 주소를 translate하려면 page table이 어디있는지 알아야함 -> page-table base register를 각 프로세스별로 유지하며 해당 page-table의 physical address를 저장해둔다.
+
+paging은 매번 메모리 접근시 해당 메모리의 physical address를 얻기 위해 page table에 접근하는 추가적인 메모리 접근이 발생한다 (page-table 자체도 메모리에 올라와있으므로)
+=> paging은 느리고 메모리를 많이 사용할 수 있는 단점이 있다.
+
+주소 translation은 다음 그림과 같은 방식으로 진행되게 된다.
+![](18.5.jpg)
+
+# 19
+## Faster Translation(TLBs)
+
+paging은 page-table을 위한 추가적인 메모리와 매번 translation을 위한 memory lookup이 수반되기 때문에 성능상의 단점이 있을 수 있다. 이를 개선? -> 하드웨어의 도움을 받자
+
+translation-lookaside buffer (TLB)를 사용하자. TLB는 MMU(memory-management unit)의 일부로써 자주 사용되는 virtual to physical address translation을 저장해두는 hardware cache라고 할 수 있다. 그래서 매번 virtual address translation이 필요하면 먼저 TLB에 가서 이미 존재하는지를 확인하는 과정을 거친다. (있다면 page table에 갈 필요없이, 즉 추가적인 메모리 접근 없이 translation을 진행할 수 있다.)
+
+![](19.1.jpg)
+TLB를 이용한 translation은 위 코드와 같이 진행됨
+1. VPN을 이용해서 TLB에 이미 있는지 확인
+2. 있다면 (TLB hit) TLB의 해당 entry에 가서 PFN을 얻고 offset과 붙여서 physical address를 얻을 수 있음 이걸로 곧바로 메모리에 접근하면 된다.
+3. 없다면 (TLB miss) 원래 하던대로 page-table에 접근해서 그에 맞는 주소를 얻음 그 후에 얻은 값을 TLB에 집어넣음 그러고서 다시 현재 수행한 명령을 재수행한다. -> 그렇게 되면 다음번엔 TLB hit이 되어 1번의 과정을 거치게 된다.
+
+일반적인 cache처럼 대부분의 경우 TLB hit이 난다는 전제하에 사용함 -> 최대한 TLB miss를 줄이자.
+
+
+다음과 같은 array의 원소에 접근한다고 하자.
+![](19.2.jpg)
+
+각 VPN에 처음 접근시에는 TLB miss가 나지만 이후 연속된 2~3개의 접근에 대해서는 TLB hit이 된다. 이것은 TLB가 spatial locality를 이용해서 그런것임(즉 space가 서로 인접한 것을 이용)
+또한 만약 0~ 9까지 접근 후 또다시 0~9를 접근한다면 (만약 TLB가 커서 기존꺼를 다 담고있다면) 모든 접근에 대해 TLB hit이 되게 된다. 이는 temporal locality를 이용한 것 (짧은 시간에 여러번 동일한 곳에 접근함)
+
+* temporal locality -> 한번 접근한 곳은 조만간 또 접근할꺼야
+* spatial locality -> x에 접근했다면 x 주변에도 접근할꺼야
+
+
+TLB miss처리?
+
+1. 하드웨어가 ! -> 예전에는 많이 했음
+2. 소프트웨어가 ! -> TLB miss가 생기면 하드웨어는 exception을 발생시킴 그 후 kernel mode로 변환한 뒤 trap handler로 점프하게 된다. trap handler는 TLB miss를 처리하기 위한 OS의 코드 일부임 그래서 처리하고 다시 원래의 하드웨어로 돌아오게 된다. 
+여기서의 차이점은 return from trap에서 기존에는 trap을 발생시킨 명령의 다음 명령부터 수행하였는데 TLB miss에서는 해당 명령을 재수행해야함 -> PC를 적절히 잘 저장해줘야해
+그리고 trap handler도 OS의 일부니깐 메모리에 있을텐데 이를 접근하기 위해선 TLB를 이용해야 됨 이때 또 miss가 나면 무한 재귀에 빠지게 될꺼야 -> 그래서 TLB miss handler와 같은 친구는 TLB의 일부 entry에 지정석으로 박아놓고 항상 hit이 되도록 만들어 준다.
+
+hardware말고 software를 이용하여 TLB를 구성하게 되면 사용되는 여러 구조를 마음대로 바꿔줄 수 있다는 장점이 있다. (하드웨어를 건드리지 않고도!)
+
+* CISC (Complex Instruction Set Computing) -> 많은 명령어를 가지는 방식, 되게 복잡하고 강력한 명령어를 가짐으로써 어셈블리어를 high-level처럼 사용함으로써 쉽게 사용할 수 있고 코드를 compact하게 만들 수 있는 장점이 있음
+* RISC (Reduced Instruction Set Computing) -> CISC와 반대임, compiler target으로 만들어서 되도록이면 간단한 primitive로 구성되어 나머지는 compiler가 만들어 주도록 함 그래서 simple하고 uniform, fast한 장점이 있음
+
+최근에는 이 둘을 섞어서 사용한다. (ex Intel)
+
+TLB엔 뭐가 들었을까?
+TLB가 fully associative라는 말은 한 translation이 TLB의 어느 곳에나 위치될 수 있다는 말임 생긴거에 따라 위치가 어느정도 특정되는 것이 아니라. 그래서 VPN으로 찾을때 병렬적으로 TLB 전체를 탐색해야함.VPN | PFN | valid bit | protection bit 등이 저장되는데 이 때의 valid bit은 page table에서의 valid bit과는 조금 다름
+
+page table에서 valid bit이 invalid라는 말은 아직 해당 프로세스에 대해 그 page가 allocate되지 않았다는 말임(translation이 틀렸다는 말이 아니라) 그런데 TLB의 valid bit은 그냥 valid한 translation인지의 여부를 보는 것임, 처음 시작시에 TLB가 비어있으면 모든 entry를 invalid로 설정함 그리고 점차 populate되면서 valid한게 추가되는 것임
+
+이런식으로 표시해두면 나중에 context switch할때 전부다 invalid로 함으로써 다른 프로세스가 기존에 남아있던 이전 프로세스의 page를 사용하지 않게 방지해줄 수 있음
+
+Context switch한다면 TLB는 어떻게 되어야 할까? -> 각 프로세스별로 mapping이 다를텐데 -> 왜냐면 프로세스별로 page-table이 존재하니깐
+
+만약 P1의 VPN 10이 PFN 100에 P2의 VPN 10이 PFN 170에 mapping된다면 VPN 10이 두가지로 mapping되는 것이므로 하드웨어가 이를 구분하지 못하게 된다.
+
+![](19.3.jpg)
+
+그러면 이를 해결하는 방법?
+
+간단하게 context switch시 TLB를 flush하는 방법이 있음
+그런데 이렇게 되면 각 프로세스들이 애써 채워놓은 TLB가 context switch한번 하고 돌아오면 다 사라지는 문제가 있음 -> 그러면 다시 populate하는 과정이 필요해서 느려져
+
+flush하지 말고 동시에 존재하게 하려면? -> 각 TLB의 entry가 어느 프로세스에 속하는지에 대한 추가적인 정보를 넣자. -> address space identifier (ASID)를 넣어주자.
+
+![](19.4.jpg)
+
+또 추가적으로 성능을 개선할 수 있는 방법은 만약 서로 다른 프로세스가 각각의 VPN으로 동일한 PFN을 참조하는 경우 해당 page를 공유할 수 있다면 TLB의 공간을 절약하면서 사용할 수 있겠지? (physical page의 수가 줄어드니깐)
+
+cache 사용시 항상 고려할 점은 cache replacement야 
+대표적인 것으로는 random 하게 고르는 방법, least-recently used한 page를 제거하는 LRU가 있음
+LRU는 locality 속성을 이용하는 방식이다.
+
+
+짧은 시간에 TLB에 들어가는 page의 수(TLB coverage)보다 더 많은 page에 접근하는 프로그램의 경우 TLB miss가 엄청 발생하게 됨 -> 이는 page의 size를 키움으로써 어느정도 해결할 수 있음
+
+
+physically-indexed cache vs virtually-indexed cache ??
+
+# 20
+## Smaller Tables
+
+page table을 유지함으로써 얻는 문제 중 하나인 메모리를 많이 차지하는 것을 해결해보자.
+page-table은 각 프로세스 별로 유지되기 때문에 수많은 프로세스를 동시에 사용하는 최근의 cpu에서는 문제가 될 수 있음
+
+가장 간단한 해결법? -> page의 size를 키우자. -> 문제점은 internal fragmentaion!!
+
+다른방법으로는 segmentation와 섞어보는것! -> code, stack, heap등의 segment로 나누고
+각 segment별로 page-table을 관리해보자. 기존에 하던것 처럼 base와 limit 레지스터를 관리함으로써 각 segment별 page-table은 작게 유지될 것임 -> 문제점은 역시나 external fragmentation 대부분의 page는 fixed-size로 유지되겠지만 page-table의 관한 정보가 variable-size가 되기 때문에 이것이 그러한 문제를 일으킬 수 있다.
+
+다른방법은?
+multi level page table -> 가장 널리 쓰이는 방법..?
+
+page-table 자체도 page로 나누어서 관리하자!
+만약 사용되지 않는 page라면 (page-table에 대한) 아예 allocate 조차 하지 않음으로써 공간을 절약할 수 있음
+
+![](20.1.jpg)
+
+위 그림처럼 기존의 linear page table은 사용되지 않는 page가 있더라도 공간을 할당했음 
+multi level에서는 사용되지 않는 것에 대해서는 table을 할당조차 하지 않음
+
+이제 그러한 page-table을 위한 page를 관리하는 테이블이 있어야 하는데 이걸 page directory라고 함. 
+
+multi level page table의 장점
+1. 공간이 절약됨 -> 최대한 실제 사용하는 것에 비례하게 할당되거든
+2. 잘 설계하면 segmentation과 다르게 page table자체도 page 크기로 잘 쪼개지니깐 관리하기도 편해
+
+단점이라면 이제 2번의(혹은 그 이상의) indrection을 거쳐야 translation이 이루어진다는 것임
+이러한 것이 대표적인 space time trade off임 (space를 절약한 대신 time을 잃었어)
+그리고 복잡해져!
+
+
+어떻게 multi level page table을 구성하는지는 책을 통해 확인하자
+
+![](20.2.jpg)
+
+
+
+# 26
+## Concurrency
+
+실행중인 하나의 프로세스를 위한 새로운 abstraction -> thread
+기존에 프로그램은 하나의 execution point를 갖는다는 개념에서 벗어나 multi threaded program은 여러개의 execution point를 갖는다.
+
+간단히 생각하면 여러개의 프로세스를 생성한것과 비슷하지만 다른 점이라면 스레드는 address space를 공유하기 때문에 동일한 데이터에 접근할 수 있다.
+
+그것 말고는 레지스터와 같은 나머지 정보들은 각 스레드별로 고유한것을 갖기 때문에 다른 프로세스들 처럼 cpu를 사용하기 위해서는 context switch가 이루어져야 한다. 그 때마다 각 스레드의 정보들이 저장되어야 하는데 그 정보들은 TCB(thread control block)에 저장된다.
+
+프로세스의 context switch와의 차이는 address space를 공유하기 때문에 page table을 저장하고 메모리에 올리는 작업을 하지 않아도 된다는 곳에 있다.
+
+address space를 고유할때 주의할점이 있다. 만약 스레드들이 다른 스레드에 independent 하게 동작하고 싶다면 필요한것은 스택메모리인데 이를 공유하지 않고 따로 따로 부여해주기 위해선 다음과 같이 배치해야 한다.
+
+![](26.1.jpg)
+
+위처럼 하나의 address space에 각 스레드에 따로따로 스택영역을 할당해줌으로써 그 영역은 각 스레드 고유의 영역이 된다. (thread-local)
+
+스레드를 쓰는 이유 !
+1. parallelism -> 만약 여러개의 processor가 존재하는 컴퓨터라면 여러 스레드가 동시에 같은 작업을 함으로써 속도를 향상시킬 수 있음
+2. I/O로 인한 blocking을 방지하기 위해 -> 한 프로그램이 실행중 I/O 작업이 생긴다면 그 동안 blocking되는 것이 아닌 스케줄러는 다른 스레드로 전환하여 작업을 계속 수행할 수 있게 해준다. 이렇게 함으로써 cpu utilization이 상승한다. (예를 들면 서버에서 클라이언트를 맞이할때)
+물론 이것은 여러개의 프로세스를 돌림으로서도 가능하지만 address space를 공유하여 서로간의 데이터 공유가 간단해지는 장점이 있다.
+
+비록 스레드가 address space를 공유하긴 하지만 고유의 register를 가지고 있기 때문에 명령 수행 도중 일어나는 context switch에 의해 race condition이 생길 수 있다.
+==race condition== -> 결과가 코드 수행 타이밍에 의해 변화하는 것
+
+
+여러개의 스레드가 특정 코드에 접근할 수 있게 되어 race condition을 만들어 낼 수 있을때
+이러한 코드 영역을 critical section이라고 한다.
+
+==critical section== -> 공유 변수에 접근하는 코드 영역(둘 이상의 스레드가 동시에 수행할 수 없는 (하면 안되는) 코드)
+
+이러한 문제를 막기 위해 필요한 것이 mutual exclusion -> 즉 한 스레드가 그 부분을 돌고 있다면 다른 스레드는 그곳에 접근하지 못하게 하는것
+
+
+이것을 가능하게 하는 가장 간단한 방법은 모든 명령어를 atomic하게 만드는거야
+그래서 in-between state가 없게 해서 중간에 잘려나가는 일이 없도록 !
+
+이건 불가능하니깐 하드웨어에선 synchronization primitive를 제공하고 os가 이것을 잘 사용해서 처리해보자.
+
+한가지 문제가 더 있는데 그건 한 스레드가 다른 스레드의 작업을 무조건 기다려야 된다는거야
+(I/O같이 느린 작업을 하더라도!!) -> sleep/waking mechanism으로 해결해보자.
+
+용어 정리 =>
+critical section : piece of code that access a shared resource, usually a variable or data structure
+
+A race condition arises if multiple threads of execution enter the
+critical section at roughly the same time; both attempt to update
+the shared data structure, leading to a surprising (and perhaps undesirable)
+outcome.
+
+To avoid these problems, threads should use some kind of mutual
+exclusion primitives; doing so guarantees that only a single thread
+ever enters a critical section, thus avoiding races, and resulting in
+deterministic program outputs.
+
+
+# 28 Locks
+
+명령어를 atomic하게 실행하는 것을 필요로 할때 interrupt는 하나의 문제점으로써 작용한다. 이를 해결하기 위해서 lock이란 개념이 등장한다
+
+lock은 단순히 그냥 변수에 불과함. 이 변수는 available 이나 acquired 둘 중 하나의 상태를 갖게되는데 available은 해당 lock을 어떤 스레드도 쥐고 있지 않다는 의미이며 acquired는 한 스레드가 lock을 쥐고 있다는 의미로 해석되게 된다.
+
+lock() 함수는 lock을 얻으려고 시도함. 만약 누구도 lock을 갖고 있지 않다면 해당 스레드가 lock의 주인이 되고 다른 스레드들은 이 lock을 가질 수 없게 된다. 만약 이미 누군가가 쥐고 있다면 그것이 반환되어 얻을 수 있을때까지 blocking 상태가 된다.
+
+unlock()은 lock을 쥐고 있던 스레드가 lock을 놓아줄때 사용함
+
+lock은 프로그래머에게 스레드의 스케줄링에 조금은 관여할 수 있게 해주는 권한을 준다. (특정 부분에 대해 동시에 들어가지 못하게 함으로써)
+
+POSIX에서는 이러한 lock을 mutex 라는 이름의 라이브러리로 제공한다
+
+lock을 평가하는 기준
+1. mutual exclusion을 제공하는지 (즉 동시에 여러 스레드가 critical section에 들어가지 못하게 막아주는지)
+2. fairness -> lock을 원하는 스레드 중 starve되는 스레드가 존재하지 않는지
+3. performance -> lock을 사용함으로써 얻어지는 오버헤드 최소화
+
+
+lock을 만드는 가장 쉬운 방법은 interrupt를 꺼버리는 방법이야
+만약 single processor에서 이런식으로 만들어준다면 잘 동작할거고 매우 간단해
+
+단점은 우선 interrupt를 사용할 수 없기 때문에 또 다시 privileded operation을 하는 권한을 OS가 아닌 스레드 자체가 가져가야 해 이건 좀 위험
+또 multiprocessor에선 원하는대로 동작하지 않음
+
+여러개의 스레드가 동시에 여러 프로세서에 올라간뒤 실행되면 interrupt를 꺼놔도 각자 할일을 하니깐 동시에 critical section에 들어갈 수 있음
+
+그리고 오랫동안 interrupt를 꺼놓으면 해당 인터럽트가 lost되어서 중요 이벤트를 처리하지 못할 수 있음
+
+simple flag를 이용한 방법
+
+![](28.1.jpg)
+
+우선 제대로 동작하지 않을 수 있음 (while이후, = 1 이전에 인터럽트로 다른 스레드로 권한이 넘어간다면)
+또한 spin waiting을 사용하므로 성능에 좋지않음
+
+좀 더 나은 방식을 위해선 하드웨어의 지원이 필요함
+
+다음과 같은 testandset 명령을 지원한다고 하자.
+![](28.2.jpg)
+
+즉 한번에 (atomically) 예전 값을 반환하여 test할 수 있게 해주면서 new값으로 set할수 있는 명령이 존재한다고 하자.
+
+이렇게 되면 앞서 발생했던 flag 값을 갱신하는 부분이 atomic하게 변하므로 문제없이 가능해진다.
+
+![](28.3.jpg)
+
+이렇게 while로 기다리는 방식의 lock을 spin lock이라고 함. 가장 간단함
+근데 더 나아지고 싶다면 preemptive 방식의 스케줄러가 와서 한놈이 돌고 있을때 그걸 빼앗을 수 있어야 함 (spin waiting 중이라면)
+
+spin lock은 위에서의 lock의 판단기준에 의해 판단해보면
+1. mutual exclusion은 잘 제공함
+2. starvation 발생
+3. multiple processor에선 꽤나 잘 동작함 (single에선 느리지만)
+
+
+spin을 해결하는 방법 for에서 spin wait할 바에 그냥 CPU를 yield하는 방법
+-> 이러면 어느정도 해결이 가능하지만 이렇게 되더라도 context switch는 이루어져야 하므로
+그곳에서 오는 오버헤드가 있음 또 여전히 starvation이 있음
 
