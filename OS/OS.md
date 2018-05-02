@@ -601,6 +601,103 @@ exclusion primitives; doing so guarantees that only a single thread
 ever enters a critical section, thus avoiding races, and resulting in
 deterministic program outputs.
 
+# 21 
+지금까진 address space가 매우 작다고 생각했는데 이제 엄청 크고 여러 프로세스가 많아서 address space들이 하나의 메모리에 올라가지 못한다고 생각해보자. -> 좀 느리더라도 큰 공간이 필요함 -> hard drive!
+
+address space를 크게 잡는이유? -> 프로그램이 좀 더 쉽게 사용할 수 있도록 (여유 공간 확인할 필요를 제거함)
+
+일부 page를 hard drive로 swap out하고 현재 사용할 page를 swap in함으로써 large virtual address space를 표현할 수 있게 할 수 있다.
+
+disk에 이러한 공간을 swap space라고 함
+이제 이곳과 메모리 사이를 여러 page가 왔다갔다 할 것임 -> 하드웨어가 swap space에 대한 physical address를 따로 저장하고 있어야 한다.
+
+![](21.1.jpg)
+-> 위 그림처럼 swap space를 사용함으로써 각 프로세스를 실제 가진 메모리보다 더 큰 메모리를 사용할 수 있다는 환상을 얻을 수 있다.
+
+page fault 발생 -> 필요한 page가 swap space에 있는 것임 -> 그곳의 주소? -> page-table의 PTE에 저장해둔다.
+
+address translation에서 이제 page table entry(PTE)를 보게 되면 그곳에 맞는 page가 실제 메모리에 올라와있는지 여부또한 저장해야됨 -> present bit으로 표현
+
+만약 존재하지 않다면 (present bit 이 0이라면) -> page fault
+
+present bit이 0이라면 PTE에 저장된 주소로 가서 page를 얻어와 메모리로 옮겨놓는다. 그 후 PTE가 가진 page의 주소값을 해당 메모리로 변경함
+
+TLB miss면 -> page table참조 -> present bit = 0이면 -> I/O를 이용 disk to memory로 옮김
+PTE업데이트 -> 명령 재시도 -> TLB miss -> page table참조 -> TLB 업데이트 -> 재시도 -> TLB hit
+
+swap space에서 다시 메모리로 page in할때 공간이 없다면 그곳에 있던 다른 친구를 page out해야함 어떤 것을 고를지 결정하는 것 -> page-replacement policy
+
+page fault control flow
+![](21.2.jpg)
+![](21.3.jpg)
+
+
+더 이상 사용할 공간이 없을만큼 메모리가 꽉차야 page replacement가 일어날까? -> 아님 어느 정도 여유공간이 필요할 수 있음
+
+OS는 현재 사용가능한 page 영역의 수에 대해 어느정도의 low watermark(LW), high watermark(HW)를 정해두고 이러한 기준을 바탕으로 진행하게 됨
+
+보통은 swap daemon(page daemon)이라는 background thread가 이러한 사용가능한 page의 수가 LW이하가 된다면 replacement를 진행해 공간을 확보하게 된다.
+
+여러 page를 묶어서 swap in/out하는 것도 disk I/O를 효율적으로 하여 성능을 최적화시킬 수 있다.
+
+
+# 22
+main memory는 시스템에서 사용되는 전체 page의 일부를 가지고 있는 것으로 볼 수 있는데 마치 virtual memory page의 cache처럼 작용한다고 볼 수 있다.
+
+그래서 main memory에 없으면 cache miss가 있으면 cache hit이라고도 생각해볼수있음
+
+결국 hit rate을 올리는것이 주요 관심사! -> 매우 적은 miss라도 속도에 큰 영향을 줌 -> disk access time은 memory access time보다 훨씬 느리니깐
+
+우선 어떤 replacement policy를 정하기 전에 optimal은 어떤지 생각해보자.
+
+optimal policy는 replacement가 필요할때 현재 cache에 있는 page중 가장 나중에 사용될 page를 evict 시키는 것이다. -> 그렇지만 그러한 정보를 얻는 것은 거의 불가능함 그냥 비교 대상으로 생각하자.
+
+
+* cache miss의 type
+* compulsory miss(cold-start miss) -> cache가 처음 비어있을때 생기는 miss (즉 item에 대한 제일 첫번째 참조일때 발생하는 miss)
+* capacity miss -> 새로운 page를 넣기엔 공간이 부족해서 생기는 miss
+* conflict miss -> item을 어디에 놓을지에 대한 제약사향때문에 생기는 miss -> set associative cache의 경우 발생한다. fully-associative에서는 생기지 않음
+
+
+1) 가장 간단한 방식 FIFO !!
+* belady's anomaly -> FIFO방식의 replacement에서 만약 cache의 수용가능한 page의 수가 늘어날때 특정 reference stream에서 hit rate이 증가하는 것이 아닌 오히려 감소하는 현상
+LRU에선 생기지 않음 (stack property)?
+
+2) 그다음은 random !
+
+3) 1, 2는 아무 생각없이 함 -> 중요한 page를 그냥 버릴수도 있음
+과거의 기록으로 미래를 예측해보자! -> page의 접근 frequency나 언제 가장 최근에 접근되었는지를 이용하여 선택하자. -> 이러한 것은 모두 locality의 특성을 활용하기 위한것임
+
+가장 적게 사용된것 -> least-frequently-used(LFU)
+가장 예전에 사용된것 -> least-recently-used(LRU)
+
+1,2보다 더 나은 성능을 제공함 -> locality 있게 접근이 이루어진다면!
+
+locality없으면 그냥 policy는 의미없고 cache size에 의해 성능이 결정됨
+모든 page를 수용할만큼 크다면 hit rate은 100%에 수렴함
+
+looping sequence와 같은 특수한 접근에는 LRU, FIFO가 worst case가 되고
+이 땐 random의 성능이 더 좋을 수 있음
+
+LRU에선 각 page별로 마지막 접근한 것이 언제인지를 기록해야함 어떻게 함? 효율적으로?
+하드웨어적으로 시간을 기록할수도 있지만 page의 수가 커지면 evict 대상을 정할때
+모두 비교해야돼
+
+approximating LRU -> clock algorithm
+use bit을 두고 page를 circular list로 만든다음 현재의 clock hand를 한칸씩 움직이며
+use bit=1이면 최근에 사용된거니 0을 만들고 다음으로 이동 -> 0을 만날때까지 그것을 사용!
+
+만약 메모리에 있던 page가 수정되었다면 disk에 있던 page를 업데이트 시켜줘야 하기 때문에 시간이 더걸린다. 수정이 안되었다면 그냥 버려도 될텐데
+그래서 modified bit(dirty bit)을 둬서 우선순위를 주자
+1순위는 use, dirty인 것 다음은 use인 것 그 다음은 둘다 아닌것 이런식으로 좀더 세세히 나눠줄 수 도 있다.
+
+
+언제 page를 disk에서 메모리로 옮길것인지에 대한 고민도 해야돼!
+근데 대부분은 demand paging -> 즉 해당 page에 접근할때 가져옴
+
+만약 현재 필요한 page가 physical memory의 한계를 넘는다면? -> 계속 paging하기 바쁘겠지?
+이런 조건을 thrashing이라고 해
+어떻게 해결? -> 모든 일을 한번에 하려고 해서 생기는 일이니깐, 다 하려고 하지말고 몇개만 잘 돌리는 방법이 있음 (working set만 돌리자), 혹은 이렇게 만든 프로세스를 죽이는 방법도 있음
 
 # 28 Locks
 
@@ -648,7 +745,7 @@ simple flag를 이용한 방법
 
 이렇게 되면 앞서 발생했던 flag 값을 갱신하는 부분이 atomic하게 변하므로 문제없이 가능해진다.
 
-![](28.3.jpg)
+![](28_3.jpg)
 
 이렇게 while로 기다리는 방식의 lock을 spin lock이라고 함. 가장 간단함
 근데 더 나아지고 싶다면 preemptive 방식의 스케줄러가 와서 한놈이 돌고 있을때 그걸 빼앗을 수 있어야 함 (spin waiting 중이라면)
