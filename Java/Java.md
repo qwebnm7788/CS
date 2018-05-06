@@ -80,6 +80,8 @@ ArrayList, LinkedList, Vector, Stack 클래스가 List의 구현체이다.
 2. Search -> 특정 원소를 찾아 해당 위치를 index로 반환해준다.
 3. Iteration -> iterator를 이용하여 순회할 수 있다.
 4. Range-view -> 리스트의 일부분만을 리스트로써 다룰 수 있게 해준다.
+
+
 ## ArrayList
 List interface를 구현한 구현체이며 c++의 vector class와 비슷하다.
 
@@ -158,3 +160,14 @@ insertion order를 유지하기 때문에 기존의 hashset, hashmap보다 더 �
 
 ## TreeSet
 순서를 유지하진 않지만 key값에 따라 정렬된 상태로 원소를 저장한다. 그렇지만 동일한 원소의 삽입이 불가능하다. 내부적으로는 Red-black tree와 같은 self-balancing binary search tree로 구현된다. 그래서 삽입, 삭제, 검색을 O(logN)에 해결할 수 있다.
+
+
+
+
+# Map
+HashMap vs HashTable
+둘다 Map 인터페이스의 구현체임
+근데 HashMap은 not thread-safe임 여러 스레드에 의해 공유될수 없음
+반면에 hashtable은 thread-safe!
+-> 만약 synchronization이 필요없다면 hashmap이 더 선호된다.
+hashtable에 비해 hashmap은 key나 value값으로 null을 받을 수 있음 (물론 key로 null을 쓰는것은 단 하나만 가능하겠지)

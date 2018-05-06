@@ -757,6 +757,131 @@ spin lock은 위에서의 lock의 판단기준에 의해 판단해보면
 
 
 spin을 해결하는 방법 for에서 spin wait할 바에 그냥 CPU를 yield하는 방법
--> 이러면 어느정도 해결이 가능하지만 이렇게 되더라도 context switch는 이루어져야 하므로
+-> 이러면 어느정도 해결이 가능하지!만 이렇게 되더라도 context switch는 이루어져야 하므로
 그곳에서 오는 오버헤드가 있음 또 여전히 starvation이 있음
+
+# 30
+## Condition variable
+
+종종 thread가 진행을 계속하기 전에 특정 condition이 true인지를 확인하기를 원할때가 있음
+(예를 들면 join()을 쓰면 child thread가 끝났는지를 체크하게 됨)
+
+parent가 child가 끝날때까지 기다리게 하려면 어떻게?
+
+![](30_1.jpg)
+물론 위의 그림처럼 shared variable로 끝났는지 여부를 체크 해주면 될수도 있어 (spin lock 써서) -> 근데 waste CPU 이고 동시에 shared variable에 접근시 원하는 결과가 안나올수도 있음
+
+Condition variale -> queue인데 스레드들이 특정 조건을 만족하지 못하면 스스로 그곳에 들어가고
+다른 스레드가 그런 조건이 성립하도록 만들면 큐에서 자고있는 친구들을 깨우는 형태의 큐를 말함
+
+wait()은 스스로 잠자러 가는 것 (큐에 들어가는것)이고 signal()은 내가 지금 상태를 바꿔서 그 상태를 원하던 자고 있는 스레드를 깨우는 작업을 한다고 볼 수 있다.
+
+wait시엔 lock을 놓아주고 자러가고 일어나게 되면 해당 lock을 acquire해야 꺠어날 수 있음(다시 동작 할 수 있음) -> race condition 방지
+
+
+![](30_2.jpg)
+shared variable과 lock을 이용한 방식
+
+우선 shared variable이 꼭 필요함?
+![](30_3.jpg)
+이렇게만 짜게되면 만약 child가 먼저 parent가 join을 부르기 전에 exit을 다 부르고 종료했다면
+parent는 그걸 모르고 wait을 불러서 무한정 자게 된다.
+
+그러면 lock이 signal, wait에 필요할까?
+![](30_4.jpg)
+이렇게 되면 race condition의 위험이 있음
+만약 parent가 done==0이어서 들어가고 wait을 부르기 직전에 switch되어 child가 exit을 수행했다고 보자. 그러면 또 다시 parent는 wait에 들어가서 무한정 기다리는 상태가 됨
+
+
+synchronization problem중 유명한
+producer / consumer problem (bounded buffer problem)
+
+여러개의 producer thread가 있고 또 여러개의 consumer thread가 있을 때
+producer는 data를 만들어 내고 consumer는 만들어진 data를 사용한다. 그 data는 queue에 들어가고 그곳에서 사용되기 위해 꺼내진다
+
+간단하게 그러한 큐가 하나의 정수로 표현된다고 해보자. 그러면 다음과 같은 코드로 작성할 수 있다.
+
+![](30_5.jpg)
+
+이걸 여러 스레드에서 다음과 같이 동시에 돌려보자.
+
+![](30_6.jpg)
+
+여러 문제점이 있는데 이 부분은 책을 읽는 것이 좋을것같음
+
+# 31
+## Semaphores
+
+lock과 condition variable 둘다로 사용할 수 있는 synchronization primitive를 말함
+semaphore는 integer value를 갖는 하나의 객체인데 두개의 연산이 있음
+sem_wait(), sem_post(), 처음 integer value가 초기화 되는 값에 따라 행동이 달라짐
+
+sem_wait() 은 1을 감소시키고 감소시킨 후의 값이 0이상이면 곧바로 반환
+0미만이 되면 sleep에 들어간다.
+sem_post()는 그냥 단순히 값을 1 증가시킨다. 그리고 만약 해당 세마포어에 대해 sleeping하는 스레드가 있으면 깨워준다.
+또 integer value가 음수값이 된다면 그 것의 절대값은 기다리고 있는(sleep 중인) 스레드의 수를 의미한다.
+![](31_1.jpg)
+
+
+세마포어를 lock으로 사용할때 -> binary semaphore
+초기값을 1로 설정함
+
+그러면 첫 친구가 잡을땐 감소시키면 0이상이 되므로 진행하고 post전에
+다른 친구가 또다시 wait을 하면 -1이 되므로 sleep에 들어가게 된다.
+(held, not held 두 상태를 가지므로 binary semaphore라고 한다)
+
+
+또한 순서를 강제하기 위해 사용할 수 도 있음
+
+다음 코드에서 child가 먼저 완료한 후에 parent 가 완료하도록 만들기 위해선
+세마포어의 초기값을 0으로 잡으면 된다.
+
+![](31_2.jpg)
+
+
+Producer/Consumer problem(Bounded Buffer) 문제를 해결해보자.
+
+full, empty 세마포어를 두고 full은 처음에 0으로 empty는 동시에 실행할 수 있는 최대 스레드의 수로 초기화 해주자.(이를 MAX라고 하자)
+![](31_3.jpg)
+
+이는 MAX = 1일때 잘 동작함. 근데 만약 그 이상이라면?
+
+두개의 producer가 동시에 put을 한다고 하자. 그러면 put을 실행중 switch가 나며 생기는 race condition이 발생할 수 있음
+
+
+이 문제는 buffer를 공유하기 때문에 그래 -> mutual exclusion을 추가해보자.
+![](31_4.jpg)
+
+근데 문제가 있음 -> dead lock!
+만약 consumer가 먼저 돌아서 mutex 잡고 full을 기다리려고 sleep이 된다면
+producer는 이제 full을 놓아주려고 가야되는데 mutex를 잡지 못해서 그 mutex를 기다리려고 sleep하게 된다. -> dead lock이 생긴다 (cycle이 생기니깐)
+
+간단히 mutex잡는 부분의 순서를 다음과 같이 바꾸어서 critical section의 범위를 줄인다.
+
+![](31_5.jpg)
+
+Reader/Writer Lock
+
+(writer가 안쓰고 있으면 여러명이 동시에 읽을 수 있는 등의 특징이 있는 경우에 사용가능)
+
+readlock, writelock, lock을 이용하여 진행
+처음으로 들어가는 reader는 writelock을 잡게됨 그러면 이후에 writer가 들어오지 못하므로 동시에 여러명의 reader가 읽을 수 있게 된다. (마지막으로 나가는 친구는 writelock을 놓아준다)
+
+![](31_6.jpg)
+
+문제는 starvation -> fair하지 못할 수 있음 왜냐면 reader가 writer를 starve할 확률이 매우 크거든 -> 어떻게 해결??
+
+Dining Philosophers 문제
+먹을떄 2개의 젓가락이 필요해! (자신의 양옆에)
+![](31_7.jpg)
+
+여기선 putforks(), getforks()를 잘 구현해서 이 문제를 해결해야 함
+
+![](31_8.jpg)
+이런식으로 작성하게 되면 문제가 있음 -> deadlock
+모든 사람이 자신의 왼쪽을 집게 되면 아무도 먹을 수 없음
+
+매우 간단하게 이 문제 해결 가능 -> 최소 한 사람이 반대로 포크를 집어주면 된다. -> 사이클이 깨짐
+
+![](31_9.jpg)
 
